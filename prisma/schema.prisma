@@ -1,0 +1,174 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Platform {
+  LINKEDIN
+  INSTAGRAM
+  FACEBOOK
+  THREADS
+  PINTEREST
+  YOUTUBE
+  GOOGLE_BUSINESS
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+enum PostStatus {
+  DRAFT
+  QUEUED
+  SCHEDULED
+  PROCESSING
+  COMPLETED
+  PARTIAL_FAILED
+  FAILED
+}
+
+enum PublicationStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum OAuthStateStatus {
+  PENDING
+  USED
+  EXPIRED
+}
+
+model User {
+  id                String             @id @default(cuid())
+  email             String             @unique @db.VarChar(191)
+  passwordHash      String
+  displayName       String             @db.VarChar(120)
+  avatarUrl         String?            @db.VarChar(512)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  socialConnections SocialConnection[]
+  mediaAssets       MediaAsset[]
+  posts             Post[]
+  oauthStates       OAuthState[]
+}
+
+model SocialConnection {
+  id                String    @id @default(cuid())
+  userId            String
+  platform          Platform
+  externalAccountId String?   @db.VarChar(191)
+  username          String?   @db.VarChar(191)
+  accessToken       String    @db.Text
+  refreshToken      String?   @db.Text
+  tokenType         String?   @db.VarChar(40)
+  scope             String?   @db.Text
+  expiresAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, platform])
+  @@index([platform])
+}
+
+model MediaAsset {
+  id           String     @id @default(cuid())
+  userId       String
+  type         MediaType
+  originalName String     @db.VarChar(255)
+  mimeType     String     @db.VarChar(100)
+  filename     String     @db.VarChar(255)
+  size         Int
+  storagePath  String     @db.VarChar(512)
+  createdAt    DateTime   @default(now())
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  postMedia    PostMedia[]
+
+  @@index([userId, createdAt])
+}
+
+model Post {
+  id          String              @id @default(cuid())
+  userId      String
+  title       String?             @db.VarChar(280)
+  description String?             @db.Text
+  scheduledFor DateTime?
+  publishedAt DateTime?
+  status      PostStatus          @default(QUEUED)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  media       PostMedia[]
+  targets     PostTarget[]
+  attempts    PublicationAttempt[]
+
+  @@index([userId, createdAt])
+  @@index([status, scheduledFor])
+}
+
+model PostMedia {
+  postId   String
+  mediaId  String
+  position Int        @default(0)
+  post     Post       @relation(fields: [postId], references: [id], onDelete: Cascade)
+  media    MediaAsset @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@id([postId, mediaId])
+  @@index([mediaId])
+}
+
+model PostTarget {
+  id                String              @id @default(cuid())
+  postId            String
+  platform          Platform
+  customTitle       String?             @db.VarChar(280)
+  customDescription String?             @db.Text
+  status            PublicationStatus   @default(PENDING)
+  externalPostId    String?             @db.VarChar(255)
+  errorMessage      String?             @db.Text
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  post              Post                @relation(fields: [postId], references: [id], onDelete: Cascade)
+  attempts          PublicationAttempt[]
+
+  @@unique([postId, platform])
+  @@index([platform, status])
+}
+
+model PublicationAttempt {
+  id            String            @id @default(cuid())
+  postId        String
+  targetId      String?
+  platform      Platform
+  status        PublicationStatus
+  responseCode  Int?
+  externalPostId String?          @db.VarChar(255)
+  errorMessage  String?           @db.Text
+  attemptedAt   DateTime          @default(now())
+  post          Post              @relation(fields: [postId], references: [id], onDelete: Cascade)
+  target        PostTarget?       @relation(fields: [targetId], references: [id], onDelete: SetNull)
+
+  @@index([postId, attemptedAt])
+}
+
+model OAuthState {
+  id           String           @id @default(cuid())
+  userId       String
+  platform     Platform
+  stateToken   String           @unique @db.VarChar(191)
+  codeVerifier String?          @db.VarChar(191)
+  redirectUri  String           @db.VarChar(512)
+  status       OAuthStateStatus @default(PENDING)
+  expiresAt    DateTime
+  createdAt    DateTime         @default(now())
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, platform, status])
+  @@index([expiresAt])
+}
